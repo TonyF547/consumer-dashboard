@@ -169,6 +169,11 @@
     document.getElementById("gateOverlay").classList.add("hidden");
     document.getElementById("appRoot").classList.remove("hidden");
     try { sessionStorage.setItem("dmt_unlocked", "1"); } catch(e){}
+    // The map was built while its container was hidden behind this gate, so
+    // Leaflet cached the wrong size; force it to re-measure now that it's visible.
+    setTimeout(function(){
+      if (window.__dmtMap && window.__dmtMap.invalidateSize) window.__dmtMap.invalidateSize();
+    }, 50);
   }
 
   function tryUnlock(){
@@ -397,6 +402,11 @@
   // ---------- map setup ----------
   function initMap(){
     state.map = L.map("mapDiv", { preferCanvas: true }).setView([-38.0, 176.0], 7);
+    // Exposed so the access gate (a separate script, before this one) can force
+    // a size recalculation once the map's container becomes visible - the map
+    // is created while it's still hidden behind the password gate, so Leaflet
+    // caches a zero/wrong size and only renders a sliver of tiles otherwise.
+    window.__dmtMap = state.map;
     // Using CARTO's basemap tiles rather than OpenStreetMap's own tile servers -
     // OSM's free tile servers actively block apps that pull tiles at any volume
     // without registering (see osm.wiki/Blocked), which is what caused the map
