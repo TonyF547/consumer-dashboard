@@ -469,13 +469,16 @@
     // caches a zero/wrong size and only renders a sliver of tiles otherwise.
     window.__dmtMap = state.map;
     // Tile provider history: OpenStreetMap's own tile servers block apps that pull
-    // tiles at any volume without registering (osm.wiki/Blocked - showed a wall of
-    // "Access blocked" tiles). CARTO's free raster basemaps now require an API key
-    // too (showed "API KEY REQUIRED" watermarks). Esri's ArcGIS Online basemap
-    // tiles are free to embed without a key for this kind of use, so using those.
-    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
-      attribution: "&copy; Esri &mdash; Source: Esri, HERE, Garmin, USGS, and the GIS community",
-      maxZoom: 19
+    // tiles at high volume without registering (osm.wiki/Blocked - showed a wall of
+    // "Access blocked" tiles during earlier dev/testing). CARTO's free raster
+    // basemaps now require an API key too ("API KEY REQUIRED" watermarks). Esri's
+    // ArcGIS Online tiles worked as a no-key fallback. Switched back to OSM tiles
+    // per Tony's request (matches his other dashboards) - if OSM blocks again under
+    // real usage, swap this tileLayer call back to the Esri one above.
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors",
+      maxZoom: 19,
+      subdomains: "abc"
     }).addTo(state.map);
 
     state.markerLayer = L.layerGroup().addTo(state.map);
