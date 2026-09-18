@@ -209,7 +209,7 @@
 <div class="wrap">
   <div class="eyebrow">SEL LTD &middot; Revenue Analysis</div>
   <h1>Dwelling Mapping Tool</h1>
-  <p class="subtitle">Select a TLA or region, set the maximum land size to exclude rural properties, then draw up to four cohorts on the map to build targeted address lists. Save a selection to come back and refine it later.</p>
+  <p class="subtitle">Select a TLA or region, narrow to specific towns if you like, set the maximum land size to exclude rural properties, then draw up to four cohorts on the map to build targeted address lists. Save a selection to come back and refine it later.</p>
 
   <!-- SELECTION CONTROLS -->
   <div class="panel">
@@ -224,6 +224,12 @@
       <div class="field">
         <label class="field-label">Territorial Authorities</label>
         <div class="tla-list" id="tlaList"></div>
+      </div>
+      <div class="field">
+        <label class="field-label">Town / township</label>
+        <div class="tla-list" id="townList">
+          <div class="empty-note" style="padding:4px 2px;">Load an area first to see its towns.</div>
+        </div>
       </div>
       <div class="field">
         <label class="field-label" for="maxHaInput">Max land size (Ha)</label>
@@ -301,6 +307,8 @@
   // ---------- state ----------
   var state = {
     selectedTLAs: [],       // array of TLA names
+    selectedTowns: [],      // array of town_city names; empty = no town filter (all towns)
+    knownTowns: [],         // town_city names seen in the currently-loaded TLA(s), for save/load
     maxHa: 2.0,
     campaignAcronym: "",    // 3-letter code written into the CSV's TLACode column
     points: [],             // filtered dwelling records currently on the map
@@ -397,6 +405,59 @@
   function setCheckedTLAs(names){
     var boxes = document.querySelectorAll("#tlaList input[type=checkbox]");
     boxes.forEach(function(b){ b.checked = names.indexOf(b.value) !== -1; });
+  }
+
+  // ---------- UI: town / township list (populated from whichever TLA(s) are loaded) ----------
+  function getCheckedTowns(){
+    var boxes = document.querySelectorAll("#townList input[type=checkbox]:checked");
+    return Array.prototype.map.call(boxes, function(b){ return b.value; });
+  }
+  function setCheckedTowns(names){
+    var boxes = document.querySelectorAll("#townList input[type=checkbox]");
+    boxes.forEach(function(b){ b.checked = !names.length || names.indexOf(b.value) !== -1; });
+  }
+
+  // Rebuilds the town checklist from the records currently loaded (before the
+  // Ha/town filters are applied). Preserves the user's existing checked towns
+  // when the set of towns hasn't changed (e.g. just tweaking max Ha); when the
+  // TLA selection changes and brings in a different set of towns, everything
+  // defaults back to checked (i.e. no town filter) so new towns aren't hidden
+  // by a stale selection.
+  function populateTownList(allRecs){
+    var counts = {};
+    allRecs.forEach(function(r){
+      var t = r.town_city || "(no town recorded)";
+      counts[t] = (counts[t] || 0) + 1;
+    });
+    var towns = Object.keys(counts).sort();
+    var previouslyChecked = getCheckedTowns();
+    var sameSet = towns.length === state.knownTowns.length &&
+      towns.every(function(t){ return state.knownTowns.indexOf(t) !== -1; });
+    state.knownTowns = towns;
+
+    var list = document.getElementById("townList");
+    list.innerHTML = "";
+    if (!towns.length){
+      list.innerHTML = '<div class="empty-note" style="padding:4px 2px;">Load an area first to see its towns.</div>';
+      return;
+    }
+    towns.forEach(function(t){
+      var row = document.createElement("label");
+      row.className = "tla-opt";
+      var cb = document.createElement("input");
+      cb.type = "checkbox"; cb.value = t;
+      cb.checked = sameSet ? previouslyChecked.indexOf(t) !== -1 : true;
+      row.appendChild(cb);
+      var span = document.createElement("span");
+      span.textContent = t;
+      row.appendChild(span);
+      var cnt = document.createElement("span");
+      cnt.className = "cnt num";
+      cnt.textContent = counts[t].toLocaleString();
+      row.appendChild(cnt);
+      list.appendChild(row);
+      cb.addEventListener("change", function(){ applySelection(); });
+    });
   }
 
   // ---------- map setup ----------
@@ -548,13 +609,24 @@
     document.getElementById("applyBtn").textContent = "Loading…";
 
     Promise.all(tlas.map(loadTLAData)).then(function(datasets){
-      var pts = [];
+      // All standalone-dwelling candidates for the selected TLA(s), before the
+      // Ha/town filters - this is what the town checklist is built from, so it
+      // always reflects every town in the selected area(s), not just the ones
+      // that happen to survive the current max-Ha setting.
+      var allRecs = [];
       datasets.forEach(function(recs){
         recs.forEach(function(r){
-          if (r.building_count > 0 && r.land_area_ha != null && r.land_area_ha <= maxHa){
-            pts.push(r);
-          }
+          if (r.building_count > 0) allRecs.push(r);
         });
+      });
+      populateTownList(allRecs);
+      var selectedTowns = getCheckedTowns();
+      state.selectedTowns = selectedTowns;
+
+      var pts = allRecs.filter(function(r){
+        if (r.land_area_ha == null || r.land_area_ha > maxHa) return false;
+        if (selectedTowns.length && selectedTowns.indexOf(r.town_city || "(no town recorded)") === -1) return false;
+        return true;
       });
       state.points = pts;
       renderPoints();
@@ -689,6 +761,7 @@
       version: 1,
       savedAt: new Date().toISOString(),
       selectedTLAs: state.selectedTLAs,
+      selectedTowns: state.selectedTowns,
       maxHa: state.maxHa,
       campaignAcronym: state.campaignAcronym,
       cohorts: state.cohorts.map(function(c){ return { name: c.name, color: c.color, latlngs: c.latlngs }; })
@@ -711,13 +784,21 @@
     setCheckedTLAs(payload.selectedTLAs || []);
     state.selectedTLAs = payload.selectedTLAs || [];
     state.maxHa = payload.maxHa != null ? payload.maxHa : 2.0;
+    var savedTowns = payload.selectedTowns || [];
 
     Promise.all(state.selectedTLAs.map(loadTLAData)).then(function(datasets){
-      var pts = [];
+      var allRecs = [];
       datasets.forEach(function(recs){
-        recs.forEach(function(r){
-          if (r.building_count > 0 && r.land_area_ha != null && r.land_area_ha <= state.maxHa) pts.push(r);
-        });
+        recs.forEach(function(r){ if (r.building_count > 0) allRecs.push(r); });
+      });
+      populateTownList(allRecs);
+      setCheckedTowns(savedTowns);
+      state.selectedTowns = savedTowns;
+
+      var pts = allRecs.filter(function(r){
+        if (r.land_area_ha == null || r.land_area_ha > state.maxHa) return false;
+        if (savedTowns.length && savedTowns.indexOf(r.town_city || "(no town recorded)") === -1) return false;
+        return true;
       });
       state.points = pts;
 
@@ -761,6 +842,9 @@
     document.getElementById("applyBtn").addEventListener("click", applySelection);
     document.getElementById("resetBtn").addEventListener("click", function(){
       setCheckedTLAs([]);
+      state.selectedTowns = [];
+      state.knownTowns = [];
+      populateTownList([]);
       clearCohorts();
       state.points = [];
       renderPoints();
