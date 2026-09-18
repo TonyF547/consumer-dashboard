@@ -1,0 +1,694 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dwelling Mapping Tool</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
+<style>
+  :root{
+    --surface-0:#faf9f6; --surface-1:#ffffff; --surface-2:#f2f0ea;
+    --line:#e3e0d6;
+    --text-primary:#20211d; --text-secondary:#5d5c53; --text-muted:#8a8878;
+    --gain:#2a78d6; --loss:#e34948; --neutral-mid:#f0efec;
+    --gain-strong:#184f95; --loss-strong:#a83231;
+    --selected:#2E7D32; --selected-text:#fff;
+    --cohort-1:#2a78d6; --cohort-2:#e07b28; --cohort-3:#8956c9; --cohort-4:#c9457a;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --surface-0:#17181a; --surface-1:#1f2022; --surface-2:#26282a;
+      --line:#34363a;
+      --text-primary:#f2f1ec; --text-secondary:#b8b6ab; --text-muted:#84837a;
+      --gain:#3987e5; --loss:#e66767; --neutral-mid:#383835;
+      --gain-strong:#7fb0ee; --loss-strong:#f1a3a2;
+      --selected:#4c9a51; --selected-text:#0d130e;
+    }
+  }
+  :root[data-theme="dark"]{
+    --surface-0:#17181a; --surface-1:#1f2022; --surface-2:#26282a;
+    --line:#34363a;
+    --text-primary:#f2f1ec; --text-secondary:#b8b6ab; --text-muted:#84837a;
+    --gain:#3987e5; --loss:#e66767; --neutral-mid:#383835;
+    --gain-strong:#7fb0ee; --loss-strong:#f1a3a2;
+    --selected:#4c9a51; --selected-text:#0d130e;
+  }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; background:var(--surface-0); color:var(--text-primary);
+    font-family:"Libre Franklin", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  .num{ font-family:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric:tabular-nums; }
+  .wrap{ max-width:1320px; margin:0 auto; padding:28px 24px 60px; }
+  .eyebrow{ font-size:11px; text-transform:uppercase; letter-spacing:1.4px; color:var(--text-muted); font-weight:600; margin-bottom:6px; }
+  h1{ margin:0; font-size:26px; font-weight:800; }
+  .subtitle{ margin:6px 0 0; font-size:13.5px; color:var(--text-secondary); max-width:80ch; line-height:1.5; }
+  .box{ background:var(--surface-1); border:1.5px solid var(--line); border-radius:10px; box-shadow:0 1px 2px rgba(32,31,27,0.05); }
+  .panel{ background:var(--surface-1); border:1px solid var(--line); border-radius:14px; padding:18px 20px 20px; margin-top:20px; }
+  .panel-title{ font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:.5px; color:var(--text-muted); margin-bottom:14px; }
+
+  .controls-grid{ display:flex; gap:22px; flex-wrap:wrap; align-items:flex-start; }
+  .field{ display:flex; flex-direction:column; gap:6px; }
+  .field-label{ font-size:11px; text-transform:uppercase; letter-spacing:.8px; color:var(--text-muted); font-weight:700; }
+  select, input[type=number]{
+    font:inherit; font-size:13px; padding:8px 10px; border-radius:7px;
+    border:1px solid var(--line); background:var(--surface-0); color:var(--text-primary);
+  }
+  input[type=number]{ width:100px; }
+  button{
+    font-family:inherit; font-size:12.5px; font-weight:700; letter-spacing:.1px;
+    padding:9px 16px; border-radius:9px; border:1.5px solid var(--line); cursor:pointer;
+    background:var(--surface-1); color:var(--text-primary);
+  }
+  button:hover{ background:var(--surface-2); }
+  button.primary{ background:var(--selected); color:var(--selected-text); border-color:transparent; }
+  button.primary:hover{ filter:brightness(1.05); }
+  button:disabled{ opacity:.45; cursor:not-allowed; }
+  button.small{ padding:6px 11px; font-size:11.5px; }
+
+  /* Multi-select TLA checklist */
+  .tla-list{
+    max-height:220px; overflow:auto; border:1px solid var(--line); border-radius:8px;
+    background:var(--surface-0); padding:6px; min-width:260px;
+  }
+  .tla-opt{ display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:6px; font-size:12.5px; }
+  .tla-opt:hover{ background:var(--surface-2); }
+  .tla-opt.unavailable{ color:var(--text-muted); }
+  .tla-opt .cnt{ margin-left:auto; color:var(--text-muted); font-size:11px; }
+  .tla-opt .tag{ font-size:9.5px; text-transform:uppercase; letter-spacing:.4px; background:var(--neutral-mid); color:var(--text-muted); padding:1px 6px; border-radius:8px; margin-left:6px; }
+
+  /* Stat tiles */
+  .tile-row{ display:flex; gap:14px; flex-wrap:wrap; margin-top:18px; }
+  .stat-tile{ background:var(--surface-1); border:2px solid var(--selected); border-radius:12px; padding:12px 18px; min-width:150px; }
+  .stat-tile .stat-label{ font-size:10.5px; text-transform:uppercase; letter-spacing:.8px; color:var(--text-muted); font-weight:700; }
+  .stat-tile .stat-value{ font-size:22px; font-weight:800; margin-top:4px; }
+  .stat-tile .stat-sub{ font-size:11px; color:var(--text-secondary); margin-top:2px; }
+
+  #mapDiv{ width:100%; height:600px; border-radius:10px; background:var(--surface-2); margin-top:6px; }
+  .map-frame{ border:2.5px solid var(--text-primary); border-radius:12px; padding:5px; margin-top:4px; }
+  .leaflet-popup-content-wrapper{ background:var(--surface-1); color:var(--text-primary); border-radius:10px; }
+
+  .cohort-row{ display:flex; align-items:center; gap:10px; padding:9px 10px; border:1px solid var(--line); border-radius:9px; margin-top:8px; background:var(--surface-0); flex-wrap:wrap; }
+  .cohort-swatch{ width:14px; height:14px; border-radius:50%; flex-shrink:0; }
+  .cohort-name{ font:inherit; font-size:13px; font-weight:700; border:none; background:transparent; color:var(--text-primary); flex:1; min-width:120px; }
+  .cohort-name:focus{ outline:1px solid var(--line); border-radius:4px; }
+  .cohort-count{ font-size:12px; color:var(--text-secondary); }
+  .cohort-actions{ display:flex; gap:6px; }
+  .empty-note{ font-size:12px; color:var(--text-muted); padding:10px 2px; }
+
+  .legend{ display:flex; align-items:center; gap:16px; margin-top:10px; flex-wrap:wrap; font-size:11.5px; color:var(--text-secondary); }
+  .legend-dot{ display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; vertical-align:middle; }
+
+  .footer-note{ font-size:11.5px; color:var(--text-muted); margin-top:16px; line-height:1.6; }
+  .hidden-file-input{ display:none; }
+  .toast{
+    position:fixed; bottom:22px; right:22px; background:var(--text-primary); color:var(--surface-0);
+    padding:12px 18px; border-radius:10px; font-size:13px; box-shadow:0 4px 16px rgba(0,0,0,.2);
+    opacity:0; transform:translateY(8px); transition:opacity .2s, transform .2s; pointer-events:none; z-index:9999;
+    max-width:360px;
+  }
+  .toast.show{ opacity:1; transform:translateY(0); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">SEL LTD &middot; Revenue Analysis</div>
+  <h1>Dwelling Mapping Tool</h1>
+  <p class="subtitle">Select a TLA or region, set the maximum land size to exclude rural properties, then draw up to four cohorts on the map to build targeted address lists. Save a selection to come back and refine it later.</p>
+
+  <!-- SELECTION CONTROLS -->
+  <div class="panel">
+    <div class="panel-title">1. Choose an area</div>
+    <div class="controls-grid">
+      <div class="field">
+        <label class="field-label" for="regionSelect">Region</label>
+        <select id="regionSelect">
+          <option value="">All regions</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="field-label">Territorial Authorities</label>
+        <div class="tla-list" id="tlaList"></div>
+      </div>
+      <div class="field">
+        <label class="field-label" for="maxHaInput">Max land size (Ha)</label>
+        <input type="number" id="maxHaInput" value="2.00" min="0.01" max="500" step="0.01">
+      </div>
+      <div class="field">
+        <label class="field-label" for="campaignAcronymInput">Campaign acronym</label>
+        <input type="text" id="campaignAcronymInput" placeholder="e.g. RDD" style="width:80px; text-transform:uppercase;">
+      </div>
+      <div class="field" style="justify-content:flex-end; flex-direction:row; align-items:flex-end; gap:10px;">
+        <button class="primary" id="applyBtn">Load / apply</button>
+        <button id="resetBtn">Reset</button>
+      </div>
+    </div>
+    <div class="footer-note" id="dataNote"></div>
+  </div>
+
+  <!-- TLA TILES -->
+  <div class="tile-row" id="tileRow"></div>
+
+  <!-- MAP -->
+  <div class="panel">
+    <div class="panel-title">2. Draw up to 4 cohorts</div>
+    <div class="map-frame"><div id="mapDiv"></div></div>
+    <div class="legend">
+      <span><span class="legend-dot" style="background:var(--text-muted);"></span>Unassigned dwelling</span>
+      <span><span class="legend-dot" style="background:var(--cohort-1);"></span>Cohort 1</span>
+      <span><span class="legend-dot" style="background:var(--cohort-2);"></span>Cohort 2</span>
+      <span><span class="legend-dot" style="background:var(--cohort-3);"></span>Cohort 3</span>
+      <span><span class="legend-dot" style="background:var(--cohort-4);"></span>Cohort 4</span>
+    </div>
+    <div id="cohortRows"></div>
+    <div class="empty-note" id="cohortEmptyNote">Use the polygon tool on the map (top-right) to draw your first cohort - e.g. a town, suburb or a few streets.</div>
+  </div>
+
+  <!-- SAVE / LOAD -->
+  <div class="panel">
+    <div class="panel-title">3. Save or reload this selection</div>
+    <div class="controls-grid" style="align-items:center;">
+      <button id="saveSelectionBtn">Save selection&hellip;</button>
+      <button id="loadSelectionBtn">Load saved selection&hellip;</button>
+      <input type="file" id="loadSelectionInput" class="hidden-file-input" accept="application/json,.json">
+      <span class="footer-note" style="margin:0;">Saving downloads a small file to your Downloads folder with the area, land-size setting and cohort shapes - reload it later to refine the polygons or land size and export a fresh CSV.</span>
+    </div>
+  </div>
+
+  <div class="footer-note">
+    Land area and dwelling detection come from LINZ NZ Primary Parcels and NZ Building Outlines, joined to LINZ NZ Addresses.
+    TLACode, postcode, zoning and campaign fields are left blank in the CSV export pending your zone lookup and downstream system - everything derivable from the address/parcel/building data is filled in.
+    Only areas listed above have data loaded so far; export more LINZ layers cropped to a new area and ask for it to be added.
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script src="data/region_lookup.js"></script>
+<script src="data/manifest.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  var COHORT_COLORS = ["#2a78d6", "#e07b28", "#8956c9", "#c9457a"];
+  var MAX_COHORTS = 4;
+  var UNASSIGNED_COLOR = "#8a8878";
+
+  var CSV_HEADER = ["Primary_Key","P_ID","Addr_Unit","Addr_No","Addr_Flat","Addr_Street","Addr_Suburb",
+    "Addr_Town","PAF_PostCode","Longitude","Latitude","AccountCode","RunCode","CouncilZone","Zone Name",
+    "In_Zone","Exclusion","Exclusion Reason","TLACode","DropNumber","DeliveryStatus","Address_Decriptor",
+    "promotionCode","Mobile","Email_Address","LetterCode","CurrentStatus","LookUpMethod","TrafficSource",
+    "AuditStatus","Name","AOSGroupDropNumber","Competitor_Onsite","Competitor_Onsite_Date","Product Code","QR Code"];
+
+  // ---------- state ----------
+  var state = {
+    selectedTLAs: [],       // array of TLA names
+    maxHa: 2.0,
+    campaignAcronym: "",    // 3-letter code written into the CSV's TLACode column
+    points: [],             // filtered dwelling records currently on the map
+    cohorts: [],            // {name, color, latlngs: [[lat,lng],...], layer}
+    map: null,
+    drawnItems: null,
+    markerLayer: null,
+    markersById: {}         // address id -> Leaflet layer
+  };
+
+  function toast(msg, ms){
+    var el = document.getElementById("toast");
+    el.textContent = msg;
+    el.classList.add("show");
+    clearTimeout(el._t);
+    el._t = setTimeout(function(){ el.classList.remove("show"); }, ms || 3200);
+  }
+
+  // ---------- data loading (script-tag based so this works from a local file://
+  // page without hitting fetch()'s CORS restriction on local files) ----------
+  var loadedTLAs = {};
+  function loadTLAData(tlaName){
+    return new Promise(function(resolve, reject){
+      if (window.DWELLING_DATA && window.DWELLING_DATA[tlaName]){
+        resolve(window.DWELLING_DATA[tlaName]);
+        return;
+      }
+      var entry = window.TLA_MANIFEST && window.TLA_MANIFEST[tlaName];
+      if (!entry){ reject(new Error("No data file registered for " + tlaName)); return; }
+      var s = document.createElement("script");
+      s.src = entry.file;
+      s.onload = function(){
+        if (window.DWELLING_DATA && window.DWELLING_DATA[tlaName]) resolve(window.DWELLING_DATA[tlaName]);
+        else reject(new Error("Data file loaded but did not populate " + tlaName));
+      };
+      s.onerror = function(){ reject(new Error("Could not load data file for " + tlaName)); };
+      document.head.appendChild(s);
+    });
+  }
+
+  // ---------- UI: region + TLA list ----------
+  function allTLAsSorted(){
+    var all = [];
+    Object.keys(window.REGION_TLAS || {}).forEach(function(region){
+      window.REGION_TLAS[region].forEach(function(tla){ all.push({tla: tla, region: region}); });
+    });
+    all.sort(function(a,b){ return a.tla.localeCompare(b.tla); });
+    return all;
+  }
+
+  function populateRegionSelect(){
+    var sel = document.getElementById("regionSelect");
+    Object.keys(window.REGION_TLAS || {}).sort().forEach(function(region){
+      var opt = document.createElement("option");
+      opt.value = region; opt.textContent = region;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener("change", function(){ populateTLAList(sel.value); });
+  }
+
+  function populateTLAList(regionFilter){
+    var list = document.getElementById("tlaList");
+    list.innerHTML = "";
+    var items = allTLAsSorted().filter(function(x){ return !regionFilter || x.region === regionFilter; });
+    items.forEach(function(x){
+      var available = !!(window.TLA_MANIFEST && window.TLA_MANIFEST[x.tla]);
+      var row = document.createElement("label");
+      row.className = "tla-opt" + (available ? "" : " unavailable");
+      var cb = document.createElement("input");
+      cb.type = "checkbox"; cb.value = x.tla; cb.disabled = !available;
+      cb.checked = state.selectedTLAs.indexOf(x.tla) !== -1;
+      row.appendChild(cb);
+      var span = document.createElement("span");
+      span.textContent = x.tla;
+      row.appendChild(span);
+      if (available){
+        var cnt = document.createElement("span");
+        cnt.className = "cnt num";
+        cnt.textContent = window.TLA_MANIFEST[x.tla].count.toLocaleString();
+        row.appendChild(cnt);
+      } else {
+        var tag = document.createElement("span");
+        tag.className = "tag"; tag.textContent = "no data yet";
+        row.appendChild(tag);
+      }
+      list.appendChild(row);
+    });
+  }
+
+  function getCheckedTLAs(){
+    var boxes = document.querySelectorAll("#tlaList input[type=checkbox]:checked");
+    return Array.prototype.map.call(boxes, function(b){ return b.value; });
+  }
+  function setCheckedTLAs(names){
+    var boxes = document.querySelectorAll("#tlaList input[type=checkbox]");
+    boxes.forEach(function(b){ b.checked = names.indexOf(b.value) !== -1; });
+  }
+
+  // ---------- map setup ----------
+  function initMap(){
+    state.map = L.map("mapDiv", { preferCanvas: true }).setView([-38.0, 176.0], 7);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors", maxZoom: 19
+    }).addTo(state.map);
+
+    state.markerLayer = L.layerGroup().addTo(state.map);
+    state.drawnItems = new L.FeatureGroup().addTo(state.map);
+
+    var drawControl = new L.Control.Draw({
+      edit: { featureGroup: state.drawnItems, edit: {}, remove: true },
+      draw: {
+        polygon: { allowIntersection: false, showArea: true, shapeOptions: { color: "#20211d", weight: 2 } },
+        polyline: false, rectangle: false, circle: false, marker: false, circlemarker: false
+      }
+    });
+    state.map.addControl(drawControl);
+
+    state.map.on(L.Draw.Event.CREATED, function(e){
+      if (state.cohorts.length >= MAX_COHORTS){
+        toast("Up to " + MAX_COHORTS + " cohorts only - delete one first.");
+        return;
+      }
+      var layer = e.layer;
+      state.drawnItems.addLayer(layer);
+      addCohortFromLayer(layer);
+    });
+
+    state.map.on("draw:deleted", function(e){
+      e.layers.eachLayer(function(layer){
+        var idx = state.cohorts.findIndex(function(c){ return c.layer === layer; });
+        if (idx !== -1) state.cohorts.splice(idx, 1);
+      });
+      reassignCohorts();
+      renderCohortRows();
+    });
+
+    state.map.on("draw:edited", function(e){
+      e.layers.eachLayer(function(layer){
+        var c = state.cohorts.find(function(c){ return c.layer === layer; });
+        if (c) c.latlngs = layerToLatLngs(layer);
+      });
+      reassignCohorts();
+      renderCohortRows();
+    });
+  }
+
+  function layerToLatLngs(layer){
+    var latlngs = layer.getLatLngs()[0];
+    return latlngs.map(function(ll){ return [ll.lat, ll.lng]; });
+  }
+
+  function addCohortFromLayer(layer){
+    var idx = state.cohorts.length;
+    var color = COHORT_COLORS[idx % COHORT_COLORS.length];
+    layer.setStyle({ color: color, weight: 2, fillOpacity: 0.08 });
+    state.cohorts.push({
+      name: "Cohort " + (idx + 1),
+      color: color,
+      latlngs: layerToLatLngs(layer),
+      layer: layer
+    });
+    reassignCohorts();
+    renderCohortRows();
+  }
+
+  // ---------- point-in-polygon (ray casting), lat/lng arrays ----------
+  function pointInPolygon(lat, lon, latlngs){
+    var inside = false;
+    for (var i = 0, j = latlngs.length - 1; i < latlngs.length; j = i++){
+      var yi = latlngs[i][0], xi = latlngs[i][1];
+      var yj = latlngs[j][0], xj = latlngs[j][1];
+      var intersect = ((yi > lat) !== (yj > lat)) &&
+        (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  function cohortForPoint(lat, lon){
+    for (var i = 0; i < state.cohorts.length; i++){
+      if (pointInPolygon(lat, lon, state.cohorts[i].latlngs)) return i;
+    }
+    return -1;
+  }
+
+  function reassignCohorts(){
+    state.points.forEach(function(p){
+      var ci = cohortForPoint(p.lat, p.lon);
+      p._cohort = ci;
+      var marker = state.markersById[p.id];
+      if (marker){
+        var color = ci === -1 ? UNASSIGNED_COLOR : state.cohorts[ci].color;
+        marker.setStyle({ color: color, fillColor: color });
+      }
+    });
+    updateTiles();
+  }
+
+  // ---------- rendering dwelling points ----------
+  function renderPoints(){
+    state.markerLayer.clearLayers();
+    state.markersById = {};
+    state.points.forEach(function(p){
+      var ci = cohortForPoint(p.lat, p.lon);
+      p._cohort = ci;
+      var color = ci === -1 ? UNASSIGNED_COLOR : state.cohorts[ci].color;
+      var m = L.circleMarker([p.lat, p.lon], { radius: 4, color: color, fillColor: color, fillOpacity: 0.75, weight: 1 });
+      m.bindPopup(
+        "<b>" + escapeHtml((p.number || "") + " " + (p.street || "")) + "</b><br>" +
+        escapeHtml(p.suburb || "") + ", " + escapeHtml(p.town_city || "") + "<br>" +
+        "Land: " + (p.land_area_ha != null ? p.land_area_ha.toFixed(3) + " Ha" : "n/a") +
+        " &middot; Buildings: " + p.building_count
+      );
+      m.addTo(state.markerLayer);
+      state.markersById[p.id] = m;
+    });
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+    });
+  }
+
+  // ---------- apply selection: load data, filter, render ----------
+  function applySelection(){
+    var tlas = getCheckedTLAs();
+    var maxHa = parseFloat(document.getElementById("maxHaInput").value) || 2.0;
+    if (!tlas.length){ toast("Pick at least one Territorial Authority."); return; }
+    state.selectedTLAs = tlas;
+    state.maxHa = maxHa;
+
+    document.getElementById("applyBtn").disabled = true;
+    document.getElementById("applyBtn").textContent = "Loading…";
+
+    Promise.all(tlas.map(loadTLAData)).then(function(datasets){
+      var pts = [];
+      datasets.forEach(function(recs){
+        recs.forEach(function(r){
+          if (r.building_count > 0 && r.land_area_ha != null && r.land_area_ha <= maxHa){
+            pts.push(r);
+          }
+        });
+      });
+      state.points = pts;
+      renderPoints();
+      updateTiles();
+      if (pts.length){
+        var bounds = L.latLngBounds(pts.map(function(p){ return [p.lat, p.lon]; }));
+        state.map.fitBounds(bounds, { padding: [20, 20] });
+      }
+      toast(pts.length.toLocaleString() + " dwellings match your filter.");
+    }).catch(function(err){
+      toast("Could not load data: " + err.message, 5000);
+    }).finally(function(){
+      document.getElementById("applyBtn").disabled = false;
+      document.getElementById("applyBtn").textContent = "Load / apply";
+    });
+  }
+
+  function updateTiles(){
+    var row = document.getElementById("tileRow");
+    row.innerHTML = "";
+    var byTLA = {};
+    state.points.forEach(function(p){ byTLA[p.tla] = (byTLA[p.tla] || 0) + 1; });
+    Object.keys(byTLA).sort().forEach(function(tla){
+      var tile = document.createElement("div");
+      tile.className = "stat-tile";
+      tile.innerHTML =
+        '<div class="stat-label">' + escapeHtml(tla) + '</div>' +
+        '<div class="stat-value num">' + byTLA[tla].toLocaleString() + '</div>' +
+        '<div class="stat-sub">dwellings selected (&le;' + state.maxHa.toFixed(2) + ' Ha)</div>';
+      row.appendChild(tile);
+    });
+    if (!state.points.length){
+      row.innerHTML = '<div class="footer-note">No area loaded yet - choose a TLA above and click "Load / apply".</div>';
+    }
+  }
+
+  // ---------- cohort legend rows ----------
+  function renderCohortRows(){
+    var wrap = document.getElementById("cohortRows");
+    var emptyNote = document.getElementById("cohortEmptyNote");
+    wrap.innerHTML = "";
+    emptyNote.style.display = state.cohorts.length ? "none" : "block";
+    state.cohorts.forEach(function(c, idx){
+      var count = state.points.filter(function(p){ return p._cohort === idx; }).length;
+      var row = document.createElement("div");
+      row.className = "cohort-row";
+      row.innerHTML =
+        '<span class="cohort-swatch" style="background:' + c.color + '"></span>' +
+        '<input class="cohort-name" data-idx="' + idx + '" value="' + escapeHtml(c.name) + '">' +
+        '<span class="cohort-count num">' + count.toLocaleString() + ' dwellings</span>' +
+        '<span class="cohort-actions">' +
+          '<button class="small" data-act="export" data-idx="' + idx + '">Export CSV</button>' +
+          '<button class="small" data-act="zoom" data-idx="' + idx + '">Zoom to</button>' +
+        '</span>';
+      wrap.appendChild(row);
+    });
+  }
+
+  document.addEventListener("input", function(e){
+    if (e.target.classList.contains("cohort-name")){
+      var idx = parseInt(e.target.getAttribute("data-idx"), 10);
+      if (state.cohorts[idx]) state.cohorts[idx].name = e.target.value;
+    }
+  });
+
+  document.addEventListener("click", function(e){
+    var btn = e.target.closest("button[data-act]");
+    if (!btn) return;
+    var idx = parseInt(btn.getAttribute("data-idx"), 10);
+    var act = btn.getAttribute("data-act");
+    if (act === "export") exportCohortCSV(idx);
+    if (act === "zoom"){
+      var c = state.cohorts[idx];
+      if (c && c.layer) state.map.fitBounds(c.layer.getBounds(), { padding: [20, 20] });
+    }
+  });
+
+  // ---------- CSV export ----------
+  function csvEscape(v){
+    v = (v === null || v === undefined) ? "" : String(v);
+    if (/[",\n]/.test(v)) return '"' + v.replace(/"/g, '""') + '"';
+    return v;
+  }
+
+  function recordToRow(p){
+    var lon = (p.lon != null) ? p.lon.toFixed(8) : "";
+    var lat = (p.lat != null) ? p.lat.toFixed(8) : "";
+    var map = {
+      "Primary_Key": "", "P_ID": p.id, "Addr_Unit": p.unit || "", "Addr_No": p.number != null ? p.number : "",
+      "Addr_Flat": "", "Addr_Street": p.street || "", "Addr_Suburb": p.suburb || "", "Addr_Town": p.town_city || "",
+      "PAF_PostCode": "", "Longitude": lon, "Latitude": lat, "AccountCode": "", "RunCode": "",
+      "CouncilZone": "", "Zone Name": "", "In_Zone": "", "Exclusion": "", "Exclusion Reason": "",
+      "TLACode": state.campaignAcronym || "", "DropNumber": "0", "DeliveryStatus": "", "Address_Decriptor": "", "promotionCode": "",
+      "Mobile": "", "Email_Address": "", "LetterCode": "", "CurrentStatus": "", "LookUpMethod": "",
+      "TrafficSource": "", "AuditStatus": "", "Name": "", "AOSGroupDropNumber": "0", "Competitor_Onsite": "",
+      "Competitor_Onsite_Date": "00/00/0000", "Product Code": "", "QR Code": "00/00/0000"
+    };
+    return CSV_HEADER.map(function(h){ return csvEscape(map[h]); }).join(",");
+  }
+
+  function downloadBlob(filename, mime, text){
+    var blob = new Blob([text], { type: mime });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+  }
+
+  function exportCohortCSV(idx){
+    var c = state.cohorts[idx];
+    if (!c) return;
+    var rows = state.points.filter(function(p){ return p._cohort === idx; });
+    if (!rows.length){ toast("That cohort has no dwellings in it yet."); return; }
+    var lines = [CSV_HEADER.map(csvEscape).join(",")].concat(rows.map(recordToRow));
+    var safeName = (c.name || "cohort").replace(/[^a-z0-9\- ]/gi, "").trim().replace(/\s+/g, "_") || "cohort";
+    downloadBlob(safeName + ".csv", "text/csv", lines.join("\r\n"));
+    var acronymNote = state.campaignAcronym && state.campaignAcronym.length === 3
+      ? ' (TLACode = ' + state.campaignAcronym + ')'
+      : ' - heads up: Campaign acronym isn\'t 3 letters yet, TLACode was left ' +
+        (state.campaignAcronym ? 'as "' + state.campaignAcronym + '"' : 'blank') + ' for every row.';
+    toast('Exported ' + rows.length.toLocaleString() + ' addresses to ' + safeName + '.csv' + acronymNote, 5000);
+  }
+
+  // ---------- save / load selection ----------
+  function saveSelection(){
+    var name = prompt("Name this selection (used for the file that's saved to your Downloads folder):", "");
+    if (name === null) return;
+    name = name.trim();
+    if (!name) { toast("Selection needs a name."); return; }
+    var payload = {
+      version: 1,
+      savedAt: new Date().toISOString(),
+      selectedTLAs: state.selectedTLAs,
+      maxHa: state.maxHa,
+      campaignAcronym: state.campaignAcronym,
+      cohorts: state.cohorts.map(function(c){ return { name: c.name, color: c.color, latlngs: c.latlngs }; })
+    };
+    var safeName = name.replace(/[^a-z0-9\- ]/gi, "").trim().replace(/\s+/g, "_") || "selection";
+    downloadBlob(safeName + ".selection.json", "application/json", JSON.stringify(payload, null, 2));
+    toast('Saved "' + name + '" to your Downloads folder.');
+  }
+
+  function clearCohorts(){
+    state.cohorts.forEach(function(c){ if (c.layer) state.drawnItems.removeLayer(c.layer); });
+    state.cohorts = [];
+  }
+
+  function loadSelectionFromObject(payload){
+    document.getElementById("maxHaInput").value = payload.maxHa != null ? payload.maxHa : 2.0;
+    var acronym = (payload.campaignAcronym || "").replace(/[^a-zA-Z]/g, "").toUpperCase().slice(0, 3);
+    document.getElementById("campaignAcronymInput").value = acronym;
+    state.campaignAcronym = acronym;
+    setCheckedTLAs(payload.selectedTLAs || []);
+    state.selectedTLAs = payload.selectedTLAs || [];
+    state.maxHa = payload.maxHa != null ? payload.maxHa : 2.0;
+
+    Promise.all(state.selectedTLAs.map(loadTLAData)).then(function(datasets){
+      var pts = [];
+      datasets.forEach(function(recs){
+        recs.forEach(function(r){
+          if (r.building_count > 0 && r.land_area_ha != null && r.land_area_ha <= state.maxHa) pts.push(r);
+        });
+      });
+      state.points = pts;
+
+      clearCohorts();
+      (payload.cohorts || []).forEach(function(c){
+        var layer = L.polygon(c.latlngs, { color: c.color, weight: 2, fillOpacity: 0.08 });
+        state.drawnItems.addLayer(layer);
+        state.cohorts.push({ name: c.name, color: c.color, latlngs: c.latlngs, layer: layer });
+      });
+
+      renderPoints();
+      reassignCohorts();
+      renderCohortRows();
+      if (pts.length){
+        var bounds = L.latLngBounds(pts.map(function(p){ return [p.lat, p.lon]; }));
+        state.map.fitBounds(bounds, { padding: [20, 20] });
+      }
+      toast("Selection loaded - refine the polygons or land size, then export or re-save.");
+    }).catch(function(err){ toast("Could not load area data: " + err.message, 5000); });
+  }
+
+  function loadSelectionFile(file){
+    var reader = new FileReader();
+    reader.onload = function(){
+      try {
+        var payload = JSON.parse(reader.result);
+        loadSelectionFromObject(payload);
+      } catch (e){
+        toast("That file doesn't look like a saved selection.", 4000);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  // ---------- wire up ----------
+  function init(){
+    populateRegionSelect();
+    populateTLAList("");
+    initMap();
+
+    document.getElementById("applyBtn").addEventListener("click", applySelection);
+    document.getElementById("resetBtn").addEventListener("click", function(){
+      setCheckedTLAs([]);
+      clearCohorts();
+      state.points = [];
+      renderPoints();
+      updateTiles();
+      renderCohortRows();
+    });
+    document.getElementById("campaignAcronymInput").addEventListener("input", function(e){
+      var clean = e.target.value.replace(/[^a-zA-Z]/g, "").toUpperCase().slice(0, 3);
+      e.target.value = clean;
+      state.campaignAcronym = clean;
+    });
+    document.getElementById("saveSelectionBtn").addEventListener("click", saveSelection);
+    document.getElementById("loadSelectionBtn").addEventListener("click", function(){
+      document.getElementById("loadSelectionInput").click();
+    });
+    document.getElementById("loadSelectionInput").addEventListener("change", function(e){
+      if (e.target.files && e.target.files[0]) loadSelectionFile(e.target.files[0]);
+      e.target.value = "";
+    });
+
+    var manifestCount = Object.keys(window.TLA_MANIFEST || {}).length;
+    document.getElementById("dataNote").textContent =
+      manifestCount + " of 68 TLAs have data loaded so far (" +
+      Object.keys(window.TLA_MANIFEST || {}).join(", ") + "). More are added as areas are exported from LINZ.";
+
+    updateTiles();
+    renderCohortRows();
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})();
+</script>
+</body>
+</html>
