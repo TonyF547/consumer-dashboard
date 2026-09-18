@@ -111,9 +111,96 @@
     max-width:360px;
   }
   .toast.show{ opacity:1; transform:translateY(0); }
+
+  /* Access gate */
+  #gateOverlay{
+    position:fixed; inset:0; background:var(--surface-0); z-index:99999;
+    display:flex; align-items:center; justify-content:center; padding:24px;
+  }
+  #gateOverlay.hidden{ display:none; }
+  .gate-box{
+    background:var(--surface-1); border:1.5px solid var(--line); border-radius:14px;
+    padding:32px 30px; max-width:360px; width:100%; box-shadow:0 4px 24px rgba(32,31,27,0.12);
+    text-align:center;
+  }
+  .gate-box .eyebrow{ margin-bottom:10px; justify-content:center; display:block; }
+  .gate-box h2{ margin:0 0 6px; font-size:19px; font-weight:800; }
+  .gate-box p{ margin:0 0 18px; font-size:12.5px; color:var(--text-secondary); line-height:1.5; }
+  #gatePassword{
+    font:inherit; font-size:14px; padding:10px 12px; border-radius:8px;
+    border:1px solid var(--line); background:var(--surface-0); color:var(--text-primary);
+    width:100%; text-align:center; letter-spacing:1px;
+  }
+  #gateError{ font-size:12px; color:var(--loss); margin-top:10px; min-height:16px; }
+  #gateSubmit{ margin-top:14px; width:100%; }
+  #appRoot.hidden{ display:none; }
 </style>
 </head>
 <body>
+<div id="gateOverlay">
+  <div class="gate-box">
+    <div class="eyebrow">SEL LTD &middot; Restricted</div>
+    <h2>Dwelling Mapping Tool</h2>
+    <p>This tool is for Smart Environmental Ltd staff only. Enter the access password to continue.</p>
+    <input type="password" id="gatePassword" placeholder="Password" autocomplete="off">
+    <button class="primary" id="gateSubmit">Unlock</button>
+    <div id="gateError"></div>
+  </div>
+</div>
+<script>
+(function(){
+  // Simple client-side access gate. This only deters casual/outside access -
+  // the page's HTML/JS is downloaded to the visitor's browser either way, so
+  // anyone who opens dev tools could work around it. Don't rely on this alone
+  // to protect anything you couldn't afford to have seen.
+  var PASSWORD_HASH = "6bd297599e7c75c930e2bb326812eb712f8450e76cea61b42b6d0c9c47338f61"; // SHA-256 hex of the access password
+
+  function sha256Hex(text){
+    var enc = new TextEncoder().encode(text);
+    return crypto.subtle.digest("SHA-256", enc).then(function(buf){
+      var bytes = new Uint8Array(buf);
+      var hex = "";
+      for (var i = 0; i < bytes.length; i++){ hex += bytes[i].toString(16).padStart(2, "0"); }
+      return hex;
+    });
+  }
+
+  function unlock(){
+    document.getElementById("gateOverlay").classList.add("hidden");
+    document.getElementById("appRoot").classList.remove("hidden");
+    try { sessionStorage.setItem("dmt_unlocked", "1"); } catch(e){}
+  }
+
+  function tryUnlock(){
+    var val = document.getElementById("gatePassword").value;
+    var errEl = document.getElementById("gateError");
+    errEl.textContent = "";
+    if (!val) return;
+    sha256Hex(val).then(function(hex){
+      if (hex === PASSWORD_HASH){
+        unlock();
+      } else {
+        errEl.textContent = "Incorrect password.";
+        document.getElementById("gatePassword").value = "";
+        document.getElementById("gatePassword").focus();
+      }
+    }).catch(function(){
+      errEl.textContent = "This browser can't verify the password (needs HTTPS + a modern browser).";
+    });
+  }
+
+  document.getElementById("gateSubmit").addEventListener("click", tryUnlock);
+  document.getElementById("gatePassword").addEventListener("keydown", function(e){
+    if (e.key === "Enter") tryUnlock();
+  });
+
+  var already = false;
+  try { already = sessionStorage.getItem("dmt_unlocked") === "1"; } catch(e){}
+  if (already) unlock();
+  else document.getElementById("gatePassword").focus();
+})();
+</script>
+<div id="appRoot" class="hidden">
 <div class="wrap">
   <div class="eyebrow">SEL LTD &middot; Revenue Analysis</div>
   <h1>Dwelling Mapping Tool</h1>
@@ -186,6 +273,7 @@
 </div>
 
 <div class="toast" id="toast"></div>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
@@ -309,8 +397,12 @@
   // ---------- map setup ----------
   function initMap(){
     state.map = L.map("mapDiv", { preferCanvas: true }).setView([-38.0, 176.0], 7);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "&copy; OpenStreetMap contributors", maxZoom: 19
+    // Using CARTO's basemap tiles rather than OpenStreetMap's own tile servers -
+    // OSM's free tile servers actively block apps that pull tiles at any volume
+    // without registering (see osm.wiki/Blocked), which is what caused the map
+    // to show a wall of "Access blocked / 403" tiles instead of an actual map.
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+      attribution: "&copy; OpenStreetMap contributors &copy; CARTO", maxZoom: 19, subdomains: "abcd"
     }).addTo(state.map);
 
     state.markerLayer = L.layerGroup().addTo(state.map);
