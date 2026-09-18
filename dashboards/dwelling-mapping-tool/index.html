@@ -407,12 +407,14 @@
     // is created while it's still hidden behind the password gate, so Leaflet
     // caches a zero/wrong size and only renders a sliver of tiles otherwise.
     window.__dmtMap = state.map;
-    // Using CARTO's basemap tiles rather than OpenStreetMap's own tile servers -
-    // OSM's free tile servers actively block apps that pull tiles at any volume
-    // without registering (see osm.wiki/Blocked), which is what caused the map
-    // to show a wall of "Access blocked / 403" tiles instead of an actual map.
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-      attribution: "&copy; OpenStreetMap contributors &copy; CARTO", maxZoom: 19, subdomains: "abcd"
+    // Tile provider history: OpenStreetMap's own tile servers block apps that pull
+    // tiles at any volume without registering (osm.wiki/Blocked - showed a wall of
+    // "Access blocked" tiles). CARTO's free raster basemaps now require an API key
+    // too (showed "API KEY REQUIRED" watermarks). Esri's ArcGIS Online basemap
+    // tiles are free to embed without a key for this kind of use, so using those.
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
+      attribution: "&copy; Esri &mdash; Source: Esri, HERE, Garmin, USGS, and the GIS community",
+      maxZoom: 19
     }).addTo(state.map);
 
     state.markerLayer = L.layerGroup().addTo(state.map);
